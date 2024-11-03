@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.tribemedia.colima-manager</string>
+    <key>Program</key>
+    <string>/usr/local/bin/colima-manager</string>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/var/log/colima-manager/output.log</string>
+    <key>StandardErrorPath</key>
+    <string>/var/log/colima-manager/error.log</string>
+    <key>UserName</key>
+    <string>gqadonis</string>
+    <key>GroupName</key>
+    <string>staff</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>HOME</key>
+        <string>/Users/gqadonis</string>
+        <key>USER</key>
+        <string>gqadonis</string>
+    </dict>
+    <key>WorkingDirectory</key>
+    <string>/Users/gqadonis</string>
+</dict>
+</plist>

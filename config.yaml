@@ -1,0 +1,5 @@
+# Server configuration
+server:
+  # The port number the HTTP server will listen on
+  # Default: 8080 if not specified
+  port: 8080
