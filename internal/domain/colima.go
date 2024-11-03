@@ -96,6 +96,7 @@ func (e *DockerContextError) Error() string {
 type ColimaRepository interface {
 	Start(ctx context.Context, config ColimaConfig) error
 	Stop(ctx context.Context, profile string) error
+	StopDaemon(ctx context.Context) error
 	Status(ctx context.Context, profile string) (*ColimaStatus, error)
 	GetKubeConfig(ctx context.Context, profile string) (string, error)
 	Clean(ctx context.Context, req CleanRequest) error

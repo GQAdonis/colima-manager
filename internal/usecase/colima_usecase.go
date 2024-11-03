@@ -124,11 +124,24 @@ func (uc *ColimaUseCase) Stop(ctx context.Context, profile string) error {
 		uc.log.Debug("Using default profile: %s", profile)
 	}
 
-	if err := uc.repo.Stop(ctx, profile); err != nil {
-		return uc.log.LogError(err, "failed to stop Colima instance")
+	// First stop the Colima instance
+	stopErr := uc.repo.Stop(ctx, profile)
+	if stopErr != nil {
+		uc.log.Error("Failed to stop Colima instance: %v", stopErr)
 	}
 
-	uc.log.Info("Colima instance stopped successfully - Profile: %s", profile)
+	// Always attempt to stop the daemon, regardless of whether Colima stop succeeded
+	if err := uc.repo.StopDaemon(ctx); err != nil {
+		uc.log.Error("Failed to stop daemon: %v", err)
+		// Don't return daemon error as it's not critical
+	}
+
+	// If Colima stop failed, return that error
+	if stopErr != nil {
+		return uc.log.LogError(stopErr, "failed to stop Colima instance")
+	}
+
+	uc.log.Info("Colima instance and daemon stopped successfully - Profile: %s", profile)
 	return nil
 }
 

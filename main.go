@@ -56,17 +56,34 @@ func main() {
 	e.GET("/kubeconfig", colimaHandler.GetKubeConfig)
 	e.POST("/clean", colimaHandler.Clean)
 
+	// Create a file to store the PID
+	pid := os.Getpid()
+	pidFile := "/tmp/colima-manager.pid"
+	if err := os.WriteFile(pidFile, []byte(fmt.Sprintf("%d", pid)), 0644); err != nil {
+		log.Fatal("Failed to write PID file: %v", err)
+	}
+
 	// Start server
 	go func() {
-		if err := e.Start(fmt.Sprintf(":%d", cfg.Server.Port)); err != nil {
+		address := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
+		if err := e.Start(address); err != nil {
 			log.Info("Shutting down the server")
 		}
 	}()
+
+	// If in daemon mode, exit the parent process
+	if cfg.Server.Daemon {
+		log.Info("Started in daemon mode")
+		os.Exit(0)
+	}
 
 	// Wait for interrupt signal to gracefully shutdown the server
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
+
+	// Cleanup
+	os.Remove(pidFile)
 
 	// Shutdown
 	if err := e.Shutdown(context.Background()); err != nil {

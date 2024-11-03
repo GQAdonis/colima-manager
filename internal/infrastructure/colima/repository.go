@@ -36,6 +36,29 @@ func NewColimaRepository() (*ColimaRepository, error) {
 	return repo, nil
 }
 
+func (r *ColimaRepository) StopDaemon(ctx context.Context) error {
+	r.log.Info("Stopping colima-manager daemon")
+
+	pidFile := "/tmp/colima-manager.pid"
+	pidBytes, err := os.ReadFile(pidFile)
+	if err != nil {
+		return r.log.LogError(err, "failed to read PID file")
+	}
+
+	pid := strings.TrimSpace(string(pidBytes))
+	cmd := r.exec.Command("kill", pid)
+	if err := cmd.Run(); err != nil {
+		return r.log.LogError(err, "failed to kill daemon process")
+	}
+
+	if err := os.Remove(pidFile); err != nil {
+		r.log.Error("failed to remove PID file: %v", err)
+	}
+
+	r.log.Info("Daemon stopped successfully")
+	return nil
+}
+
 func (r *ColimaRepository) CheckDependencies(ctx context.Context) (*domain.DependencyStatus, error) {
 	r.log.Info("Checking dependencies")
 	status := &domain.DependencyStatus{}
