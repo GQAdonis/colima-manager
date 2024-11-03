@@ -38,15 +38,40 @@ func LoadConfig() (*Config, error) {
 	config.Server.Host = "localhost" // Default host
 
 	// Define command line flags
-	daemon := flag.Bool("d", false, "Run in daemon mode")
-	daemonLong := flag.Bool("daemon", false, "Run in daemon mode")
-	host := flag.String("h", "", "Server host address")
-	hostLong := flag.String("host", "", "Server host address")
+	var (
+		configPath string
+		daemon     bool
+		host       string
+	)
 
-	flag.Parse()
+	// Define flags with both short and long forms
+	flag.StringVar(&configPath, "c", "", "Path to config file")
+	flag.StringVar(&configPath, "config", "", "Path to config file")
+	flag.BoolVar(&daemon, "d", false, "Run in daemon mode")
+	flag.BoolVar(&daemon, "daemon", false, "Run in daemon mode")
+	flag.StringVar(&host, "h", "", "Server host address")
+	flag.StringVar(&host, "host", "", "Server host address")
+
+	// Parse flags if they haven't been parsed yet
+	if !flag.Parsed() {
+		flag.Parse()
+	}
+
+	// Determine config file path with following precedence:
+	// 1. Command line flags (-c or --config)
+	// 2. Environment variable (COLIMA_MANAGER_CONFIG)
+	// 3. Default path (config.yaml)
+	var configFile string
+	if configPath != "" {
+		configFile = configPath
+	} else if envPath := os.Getenv("COLIMA_MANAGER_CONFIG"); envPath != "" {
+		configFile = envPath
+	} else {
+		configFile = "config.yaml"
+	}
 
 	// Try to load from config file
-	data, err := os.ReadFile("config.yaml")
+	data, err := os.ReadFile(configFile)
 	if err == nil {
 		if err := yaml.Unmarshal(data, config); err != nil {
 			return nil, err
@@ -54,16 +79,12 @@ func LoadConfig() (*Config, error) {
 	}
 
 	// Override with command line flags if provided
-	if *daemon || *daemonLong {
+	if daemon {
 		config.Server.Daemon = true
 	}
 
-	if *host != "" || *hostLong != "" {
-		hostVal := *host
-		if hostVal == "" {
-			hostVal = *hostLong
-		}
-		config.Server.Host = hostVal
+	if host != "" {
+		config.Server.Host = host
 	}
 
 	return config, nil

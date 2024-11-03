@@ -1,12 +1,18 @@
 package config
 
 import (
+	"flag"
 	"os"
 	"testing"
 )
 
-func TestLoadConfig(t *testing.T) {
-	// Create a temporary config file
+func TestMain(m *testing.M) {
+	// Parse flags before running tests to handle test flags
+	flag.Parse()
+	os.Exit(m.Run())
+}
+
+func createTestConfig(t *testing.T) (string, func()) {
 	content := []byte(`
 server:
   port: 9090
@@ -27,7 +33,6 @@ profiles:
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.Remove(tmpfile.Name())
 
 	if _, err := tmpfile.Write(content); err != nil {
 		t.Fatal(err)
@@ -36,32 +41,18 @@ profiles:
 		t.Fatal(err)
 	}
 
-	// Temporarily replace config.yaml with our test file
-	if err := os.Rename("config.yaml", "config.yaml.bak"); err != nil && !os.IsNotExist(err) {
-		t.Fatal(err)
-	}
-	if err := os.Rename(tmpfile.Name(), "config.yaml"); err != nil {
-		t.Fatal(err)
-	}
-	defer func() {
-		os.Remove("config.yaml")
-		if _, err := os.Stat("config.yaml.bak"); err == nil {
-			os.Rename("config.yaml.bak", "config.yaml")
-		}
-	}()
-
-	// Test loading the config
-	config, err := LoadConfig()
-	if err != nil {
-		t.Fatalf("Failed to load config: %v", err)
+	cleanup := func() {
+		os.Remove(tmpfile.Name())
 	}
 
-	// Test server configuration
+	return tmpfile.Name(), cleanup
+}
+
+func verifyConfig(t *testing.T, config *Config) {
 	if config.Server.Port != 9090 {
 		t.Errorf("Expected port 9090, got %d", config.Server.Port)
 	}
 
-	// Test auto configuration
 	if !config.Server.Auto.Enabled {
 		t.Error("Expected auto.enabled to be true")
 	}
@@ -69,7 +60,6 @@ profiles:
 		t.Errorf("Expected default profile 'test-profile', got '%s'", config.Server.Auto.Default)
 	}
 
-	// Test profile configuration
 	profile, exists := config.Profiles["test-profile"]
 	if !exists {
 		t.Fatal("Expected test-profile to exist")
@@ -98,7 +88,146 @@ profiles:
 	}
 }
 
+func TestFlagPatterns(t *testing.T) {
+	tests := []struct {
+		name     string
+		args     []string
+		envVar   string
+		checkFn  func(*Config) bool
+		expected bool
+	}{
+		{
+			name: "Short config flag",
+			args: []string{"-c", "custom.yaml"},
+			checkFn: func(c *Config) bool {
+				return flag.Lookup("c") != nil && flag.Lookup("config") != nil
+			},
+			expected: true,
+		},
+		{
+			name: "Long config flag",
+			args: []string{"--config", "custom.yaml"},
+			checkFn: func(c *Config) bool {
+				return flag.Lookup("c") != nil && flag.Lookup("config") != nil
+			},
+			expected: true,
+		},
+		{
+			name: "Short daemon flag",
+			args: []string{"-d"},
+			checkFn: func(c *Config) bool {
+				return flag.Lookup("d") != nil && flag.Lookup("daemon") != nil && c.Server.Daemon
+			},
+			expected: true,
+		},
+		{
+			name: "Long daemon flag",
+			args: []string{"--daemon"},
+			checkFn: func(c *Config) bool {
+				return flag.Lookup("d") != nil && flag.Lookup("daemon") != nil && c.Server.Daemon
+			},
+			expected: true,
+		},
+		{
+			name: "Short host flag",
+			args: []string{"-h", "localhost"},
+			checkFn: func(c *Config) bool {
+				return flag.Lookup("h") != nil && flag.Lookup("host") != nil && c.Server.Host == "localhost"
+			},
+			expected: true,
+		},
+		{
+			name: "Long host flag",
+			args: []string{"--host", "localhost"},
+			checkFn: func(c *Config) bool {
+				return flag.Lookup("h") != nil && flag.Lookup("host") != nil && c.Server.Host == "localhost"
+			},
+			expected: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Save original state
+			oldArgs := os.Args
+			oldFlagCommandLine := flag.CommandLine
+			defer func() {
+				os.Args = oldArgs
+				flag.CommandLine = oldFlagCommandLine
+			}()
+
+			// Reset flags for this test
+			flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+			os.Args = append([]string{"cmd"}, tt.args...)
+
+			if tt.envVar != "" {
+				oldEnv, exists := os.LookupEnv("COLIMA_MANAGER_CONFIG")
+				os.Setenv("COLIMA_MANAGER_CONFIG", tt.envVar)
+				defer func() {
+					if exists {
+						os.Setenv("COLIMA_MANAGER_CONFIG", oldEnv)
+					} else {
+						os.Unsetenv("COLIMA_MANAGER_CONFIG")
+					}
+				}()
+			}
+
+			config, err := LoadConfig()
+			if err != nil {
+				t.Fatalf("Failed to load config: %v", err)
+			}
+
+			if got := tt.checkFn(config); got != tt.expected {
+				t.Errorf("Test %s failed: expected %v, got %v", tt.name, tt.expected, got)
+			}
+		})
+	}
+}
+
+func TestLoadConfigWithEnvVar(t *testing.T) {
+	configPath, cleanup := createTestConfig(t)
+	defer cleanup()
+
+	// Save original state
+	oldArgs := os.Args
+	oldFlagCommandLine := flag.CommandLine
+	oldEnv, envExists := os.LookupEnv("COLIMA_MANAGER_CONFIG")
+	defer func() {
+		os.Args = oldArgs
+		flag.CommandLine = oldFlagCommandLine
+		if envExists {
+			os.Setenv("COLIMA_MANAGER_CONFIG", oldEnv)
+		} else {
+			os.Unsetenv("COLIMA_MANAGER_CONFIG")
+		}
+	}()
+
+	// Reset flags and set environment variable
+	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+	os.Args = []string{"cmd"}
+	os.Setenv("COLIMA_MANAGER_CONFIG", configPath)
+
+	config, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("Failed to load config: %v", err)
+	}
+
+	verifyConfig(t, config)
+}
+
 func TestLoadConfigDefaults(t *testing.T) {
+	// Save original state
+	oldArgs := os.Args
+	oldFlagCommandLine := flag.CommandLine
+	defer func() {
+		os.Args = oldArgs
+		flag.CommandLine = oldFlagCommandLine
+	}()
+
+	// Reset flags for this test
+	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+	os.Args = []string{"cmd"}
+
 	// Temporarily move any existing config file
 	if err := os.Rename("config.yaml", "config.yaml.bak"); err != nil && !os.IsNotExist(err) {
 		t.Fatal(err)
@@ -109,13 +238,11 @@ func TestLoadConfigDefaults(t *testing.T) {
 		}
 	}()
 
-	// Test loading with no config file
 	config, err := LoadConfig()
 	if err != nil {
 		t.Fatalf("Failed to load config: %v", err)
 	}
 
-	// Test default values
 	if config.Server.Port != 8080 {
 		t.Errorf("Expected default port 8080, got %d", config.Server.Port)
 	}

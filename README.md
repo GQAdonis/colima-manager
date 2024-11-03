@@ -106,7 +106,39 @@ launchctl load ~/Library/LaunchAgents/com.tribemedia.colima-manager.plist
 
 ## Configuration
 
-The application can be configured using a `config.yaml` file in the root directory. Here's a sample configuration:
+The application can be configured using a configuration file and command-line flags. The configuration file path can be specified in multiple ways, with the following precedence:
+
+1. Command-line flags:
+   ```bash
+   # Short form
+   colima-manager -c /path/to/config.yaml
+
+   # Long form
+   colima-manager --config /path/to/config.yaml
+   ```
+
+2. Environment variable:
+   ```bash
+   export COLIMA_MANAGER_CONFIG=/path/to/config.yaml
+   colima-manager
+   ```
+
+3. Default path: `config.yaml` in the current directory
+
+Additional command-line flags:
+```bash
+# Run in daemon mode
+colima-manager -d
+colima-manager --daemon
+
+# Set server host address
+colima-manager -h localhost
+colima-manager --host localhost
+```
+
+### Configuration File Format
+
+The configuration file should be in YAML format. Here's a sample configuration:
 
 ```yaml
 # Server configuration
