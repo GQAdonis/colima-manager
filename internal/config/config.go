@@ -42,6 +42,7 @@ func LoadConfig() (*Config, error) {
 		configPath string
 		daemon     bool
 		host       string
+		auto       bool
 	)
 
 	// Define flags with both short and long forms
@@ -51,6 +52,8 @@ func LoadConfig() (*Config, error) {
 	flag.BoolVar(&daemon, "daemon", false, "Run in daemon mode")
 	flag.StringVar(&host, "h", "", "Server host address")
 	flag.StringVar(&host, "host", "", "Server host address")
+	flag.BoolVar(&auto, "a", false, "Automatically create and start default profile")
+	flag.BoolVar(&auto, "auto", false, "Automatically create and start default profile")
 
 	// Parse flags if they haven't been parsed yet
 	if !flag.Parsed() {
@@ -85,6 +88,28 @@ func LoadConfig() (*Config, error) {
 
 	if host != "" {
 		config.Server.Host = host
+	}
+
+	if auto {
+		config.Server.Auto.Enabled = true
+		// If no default profile is set, create one with sensible defaults
+		if config.Server.Auto.Default == "" {
+			config.Server.Auto.Default = "default"
+			if config.Profiles == nil {
+				config.Profiles = make(map[string]ProfileConfig)
+			}
+			if _, exists := config.Profiles[config.Server.Auto.Default]; !exists {
+				config.Profiles[config.Server.Auto.Default] = ProfileConfig{
+					CPUs:           4,
+					Memory:         8,
+					DiskSize:       60,
+					VMType:         "vz",
+					Runtime:        "containerd",
+					NetworkAddress: true,
+					Kubernetes:     true,
+				}
+			}
+		}
 	}
 
 	return config, nil

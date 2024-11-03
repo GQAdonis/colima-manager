@@ -52,6 +52,13 @@ func (uc *ColimaUseCase) UpdateDependencies(ctx context.Context) error {
 func (uc *ColimaUseCase) Start(ctx context.Context, config domain.ColimaConfig) error {
 	uc.log.Info("Starting Colima instance with config: %+v", config)
 
+	// Try to acquire lock
+	profileLock := domain.GetProfileLock()
+	if !profileLock.Lock(config.Profile) {
+		return &domain.ProfileBusyError{Profile: config.Profile}
+	}
+	defer profileLock.Unlock(config.Profile)
+
 	// Apply defaults if not set
 	defaults := domain.DefaultColimaConfig()
 
@@ -119,6 +126,13 @@ func (uc *ColimaUseCase) Start(ctx context.Context, config domain.ColimaConfig) 
 func (uc *ColimaUseCase) Stop(ctx context.Context, profile string) error {
 	uc.log.Info("Stopping Colima instance - Profile: %s", profile)
 
+	// Try to acquire lock
+	profileLock := domain.GetProfileLock()
+	if !profileLock.Lock(profile) {
+		return &domain.ProfileBusyError{Profile: profile}
+	}
+	defer profileLock.Unlock(profile)
+
 	if profile == "" {
 		profile = domain.DefaultColimaConfig().Profile
 		uc.log.Debug("Using default profile: %s", profile)
@@ -181,6 +195,15 @@ func (uc *ColimaUseCase) GetKubeConfig(ctx context.Context, profile string) (str
 
 func (uc *ColimaUseCase) Clean(ctx context.Context, req domain.CleanRequest) error {
 	uc.log.Info("Cleaning Colima resources - Profile: %s", req.Profile)
+
+	// Try to acquire lock if specific profile
+	if req.Profile != "" {
+		profileLock := domain.GetProfileLock()
+		if !profileLock.Lock(req.Profile) {
+			return &domain.ProfileBusyError{Profile: req.Profile}
+		}
+		defer profileLock.Unlock(req.Profile)
+	}
 
 	if err := uc.repo.Clean(ctx, req); err != nil {
 		return uc.log.LogError(err, "failed to clean Colima resources")

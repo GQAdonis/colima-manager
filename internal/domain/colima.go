@@ -3,6 +3,7 @@ package domain
 import (
 	"context"
 	"fmt"
+	"sync"
 )
 
 // DependencyStatus represents the status of required dependencies
@@ -73,6 +74,14 @@ func (e *ProfileMalfunctionError) Error() string {
 	return fmt.Sprintf("profile '%s' is malfunctioning: %s", e.Profile, e.Reason)
 }
 
+type ProfileBusyError struct {
+	Profile string
+}
+
+func (e *ProfileBusyError) Error() string {
+	return fmt.Sprintf("profile '%s' is currently busy with another operation", e.Profile)
+}
+
 type DependencyError struct {
 	Dependency string
 	Reason     string
@@ -90,6 +99,56 @@ type DockerContextError struct {
 
 func (e *DockerContextError) Error() string {
 	return fmt.Sprintf("docker context %s failed for profile '%s': %s", e.Operation, e.Profile, e.Reason)
+}
+
+// ProfileLock provides thread-safe locking for profiles
+type ProfileLock struct {
+	mu    sync.Mutex
+	locks map[string]bool
+}
+
+var (
+	globalProfileLock *ProfileLock
+	lockOnce          sync.Once
+)
+
+func GetProfileLock() *ProfileLock {
+	lockOnce.Do(func() {
+		globalProfileLock = &ProfileLock{
+			locks: make(map[string]bool),
+		}
+	})
+	return globalProfileLock
+}
+
+// For testing purposes only
+func ResetProfileLock() {
+	globalProfileLock = &ProfileLock{
+		locks: make(map[string]bool),
+	}
+}
+
+func (pl *ProfileLock) Lock(profile string) bool {
+	pl.mu.Lock()
+	defer pl.mu.Unlock()
+
+	if pl.locks[profile] {
+		return false
+	}
+	pl.locks[profile] = true
+	return true
+}
+
+func (pl *ProfileLock) Unlock(profile string) {
+	pl.mu.Lock()
+	defer pl.mu.Unlock()
+	delete(pl.locks, profile)
+}
+
+func (pl *ProfileLock) IsLocked(profile string) bool {
+	pl.mu.Lock()
+	defer pl.mu.Unlock()
+	return pl.locks[profile]
 }
 
 // ColimaRepository defines the interface for Colima operations

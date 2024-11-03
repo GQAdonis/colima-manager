@@ -144,6 +144,28 @@ func TestFlagPatterns(t *testing.T) {
 			},
 			expected: true,
 		},
+		{
+			name: "Short auto flag",
+			args: []string{"-a"},
+			checkFn: func(c *Config) bool {
+				return flag.Lookup("a") != nil && flag.Lookup("auto") != nil &&
+					c.Server.Auto.Enabled &&
+					c.Server.Auto.Default == "default" &&
+					c.Profiles["default"].CPUs == 4
+			},
+			expected: true,
+		},
+		{
+			name: "Long auto flag",
+			args: []string{"--auto"},
+			checkFn: func(c *Config) bool {
+				return flag.Lookup("a") != nil && flag.Lookup("auto") != nil &&
+					c.Server.Auto.Enabled &&
+					c.Server.Auto.Default == "default" &&
+					c.Profiles["default"].CPUs == 4
+			},
+			expected: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -181,6 +203,57 @@ func TestFlagPatterns(t *testing.T) {
 				t.Errorf("Test %s failed: expected %v, got %v", tt.name, tt.expected, got)
 			}
 		})
+	}
+}
+
+func TestAutoFlagWithExistingProfile(t *testing.T) {
+	// Save original state
+	oldArgs := os.Args
+	oldFlagCommandLine := flag.CommandLine
+	defer func() {
+		os.Args = oldArgs
+		flag.CommandLine = oldFlagCommandLine
+	}()
+
+	// Create a config file with an existing default profile
+	content := []byte(`
+server:
+  auto:
+    default: "default"
+profiles:
+  default:
+    cpus: 8
+    memory: 16
+    disk_size: 100
+`)
+	tmpfile, err := os.CreateTemp("", "config.*.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(tmpfile.Name())
+
+	if _, err := tmpfile.Write(content); err != nil {
+		t.Fatal(err)
+	}
+	if err := tmpfile.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	// Reset flags for this test
+	flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+	os.Args = []string{"cmd", "-a", "-c", tmpfile.Name()}
+
+	config, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("Failed to load config: %v", err)
+	}
+
+	// Verify that the existing profile wasn't overwritten
+	if config.Profiles["default"].CPUs != 8 {
+		t.Errorf("Expected CPUs to be 8, got %d", config.Profiles["default"].CPUs)
+	}
+	if config.Profiles["default"].Memory != 16 {
+		t.Errorf("Expected Memory to be 16, got %d", config.Profiles["default"].Memory)
 	}
 }
 

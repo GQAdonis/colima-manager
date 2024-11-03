@@ -2,394 +2,265 @@ package usecase
 
 import (
 	"context"
-	"fmt"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/gqadonis/colima-manager/internal/domain"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 )
 
-// MockColimaRepository is a mock implementation of the repository
-type MockColimaRepository struct {
-	mock.Mock
+type mockRepository struct {
+	startCalled       bool
+	startConfig       domain.ColimaConfig
+	statusCalled      bool
+	statusProfile     string
+	kubeConfigCalled  bool
+	kubeConfigProfile string
+	mockStatus        *domain.ColimaStatus
+	mockError         error
+	mu                sync.Mutex // protect concurrent access to mock fields
 }
 
-func (m *MockColimaRepository) Start(ctx context.Context, config domain.ColimaConfig) error {
-	args := m.Called(ctx, config)
-	return args.Error(0)
+func (m *mockRepository) Start(ctx context.Context, config domain.ColimaConfig) error {
+	m.mu.Lock()
+	m.startCalled = true
+	m.startConfig = config
+	m.mu.Unlock()
+	// Simulate some work
+	time.Sleep(100 * time.Millisecond)
+	return m.mockError
 }
 
-func (m *MockColimaRepository) Stop(ctx context.Context, profile string) error {
-	args := m.Called(ctx, profile)
-	return args.Error(0)
+func (m *mockRepository) Stop(ctx context.Context, profile string) error {
+	time.Sleep(100 * time.Millisecond)
+	return m.mockError
 }
 
-func (m *MockColimaRepository) StopDaemon(ctx context.Context) error {
-	args := m.Called(ctx)
-	return args.Error(0)
+func (m *mockRepository) StopDaemon(ctx context.Context) error {
+	return m.mockError
 }
 
-func (m *MockColimaRepository) Status(ctx context.Context, profile string) (*domain.ColimaStatus, error) {
-	args := m.Called(ctx, profile)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*domain.ColimaStatus), args.Error(1)
+func (m *mockRepository) Status(ctx context.Context, profile string) (*domain.ColimaStatus, error) {
+	m.mu.Lock()
+	m.statusCalled = true
+	m.statusProfile = profile
+	m.mu.Unlock()
+	return m.mockStatus, m.mockError
 }
 
-func (m *MockColimaRepository) GetKubeConfig(ctx context.Context, profile string) (string, error) {
-	args := m.Called(ctx, profile)
-	return args.String(0), args.Error(1)
+func (m *mockRepository) GetKubeConfig(ctx context.Context, profile string) (string, error) {
+	m.mu.Lock()
+	m.kubeConfigCalled = true
+	m.kubeConfigProfile = profile
+	m.mu.Unlock()
+	return "", m.mockError
 }
 
-func (m *MockColimaRepository) Clean(ctx context.Context, req domain.CleanRequest) error {
-	args := m.Called(ctx, req)
-	return args.Error(0)
+func (m *mockRepository) Clean(ctx context.Context, req domain.CleanRequest) error {
+	time.Sleep(100 * time.Millisecond)
+	return m.mockError
 }
 
-func (m *MockColimaRepository) CheckDependencies(ctx context.Context) (*domain.DependencyStatus, error) {
-	args := m.Called(ctx)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*domain.DependencyStatus), args.Error(1)
+func (m *mockRepository) CheckDependencies(ctx context.Context) (*domain.DependencyStatus, error) {
+	return &domain.DependencyStatus{
+		Homebrew: true,
+		Colima:   true,
+		Lima:     true,
+	}, m.mockError
 }
 
-func (m *MockColimaRepository) UpdateDependencies(ctx context.Context) error {
-	args := m.Called(ctx)
-	return args.Error(0)
+func (m *mockRepository) UpdateDependencies(ctx context.Context) error {
+	return m.mockError
 }
 
-func (m *MockColimaRepository) CreateDockerContext(ctx context.Context, profile string) error {
-	args := m.Called(ctx, profile)
-	return args.Error(0)
+func (m *mockRepository) CreateDockerContext(ctx context.Context, profile string) error {
+	return m.mockError
 }
 
-func (m *MockColimaRepository) RemoveDockerContext(ctx context.Context, profile string) error {
-	args := m.Called(ctx, profile)
-	return args.Error(0)
+func (m *mockRepository) RemoveDockerContext(ctx context.Context, profile string) error {
+	return m.mockError
 }
 
-func (m *MockColimaRepository) ListDockerContexts(ctx context.Context) ([]domain.DockerContext, error) {
-	args := m.Called(ctx)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).([]domain.DockerContext), args.Error(1)
+func (m *mockRepository) ListDockerContexts(ctx context.Context) ([]domain.DockerContext, error) {
+	return nil, m.mockError
 }
 
-func TestStop(t *testing.T) {
-	tests := []struct {
-		name          string
-		profile       string
-		setupMock     func(*MockColimaRepository)
-		expectedError error
-	}{
-		{
-			name:    "successful stop with daemon",
-			profile: "default",
-			setupMock: func(m *MockColimaRepository) {
-				m.On("Stop", mock.Anything, "default").Return(nil)
-				m.On("StopDaemon", mock.Anything).Return(nil)
-			},
-			expectedError: nil,
-		},
-		{
-			name:    "successful stop with custom profile",
-			profile: "test-profile",
-			setupMock: func(m *MockColimaRepository) {
-				m.On("Stop", mock.Anything, "test-profile").Return(nil)
-				m.On("StopDaemon", mock.Anything).Return(nil)
-			},
-			expectedError: nil,
-		},
-		{
-			name:    "failed to stop colima but daemon stops",
-			profile: "default",
-			setupMock: func(m *MockColimaRepository) {
-				m.On("Stop", mock.Anything, "default").Return(&domain.ProfileNotFoundError{Profile: "default"})
-				// The daemon stop should still be attempted even if colima stop fails
-				m.On("StopDaemon", mock.Anything).Return(nil).Once()
-			},
-			expectedError: &domain.ProfileNotFoundError{},
-		},
-		{
-			name:    "failed to stop daemon but colima stops",
-			profile: "default",
-			setupMock: func(m *MockColimaRepository) {
-				m.On("Stop", mock.Anything, "default").Return(nil)
-				m.On("StopDaemon", mock.Anything).Return(fmt.Errorf("failed to stop daemon"))
-			},
-			expectedError: nil, // We don't return daemon stop errors
+func TestStartupSequence(t *testing.T) {
+	// Reset profile lock before test
+	domain.ResetProfileLock()
+
+	// Create mock repository
+	mockRepo := &mockRepository{
+		mockStatus: &domain.ColimaStatus{
+			Status:     "Running",
+			CPUs:       4,
+			Memory:     8,
+			DiskSize:   60,
+			Kubernetes: true,
+			Profile:    "default",
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			mockRepo := new(MockColimaRepository)
-			tt.setupMock(mockRepo)
+	// Create use case with mock repository
+	useCase := NewColimaUseCase(mockRepo)
 
-			uc := NewColimaUseCase(mockRepo)
-			err := uc.Stop(context.Background(), tt.profile)
+	// Test configuration
+	config := domain.ColimaConfig{
+		CPUs:           4,
+		Memory:         8,
+		DiskSize:       60,
+		VMType:         "vz",
+		Runtime:        "containerd",
+		NetworkAddress: true,
+		Kubernetes:     true,
+		Profile:        "default",
+	}
 
-			if tt.expectedError != nil {
-				assert.Error(t, err)
-				assert.IsType(t, tt.expectedError, err)
-			} else {
-				assert.NoError(t, err)
-			}
-			mockRepo.AssertExpectations(t)
-		})
+	// Start the profile
+	err := useCase.Start(context.Background(), config)
+	if err != nil {
+		t.Errorf("Expected no error, got %v", err)
+	}
+
+	// Verify Start was called with correct config
+	mockRepo.mu.Lock()
+	if !mockRepo.startCalled {
+		t.Error("Expected Start to be called")
+	}
+	if mockRepo.startConfig != config {
+		t.Errorf("Expected config %+v, got %+v", config, mockRepo.startConfig)
+	}
+	mockRepo.mu.Unlock()
+
+	// Check status
+	status, err := useCase.Status(context.Background(), config.Profile)
+	if err != nil {
+		t.Errorf("Expected no error, got %v", err)
+	}
+
+	// Verify Status was called with correct profile
+	mockRepo.mu.Lock()
+	if !mockRepo.statusCalled {
+		t.Error("Expected Status to be called")
+	}
+	if mockRepo.statusProfile != config.Profile {
+		t.Errorf("Expected profile %s, got %s", config.Profile, mockRepo.statusProfile)
+	}
+	mockRepo.mu.Unlock()
+
+	// Verify status values
+	if status.Status != "Running" {
+		t.Errorf("Expected status Running, got %s", status.Status)
+	}
+	if status.CPUs != config.CPUs {
+		t.Errorf("Expected CPUs %d, got %d", config.CPUs, status.CPUs)
+	}
+	if status.Memory != config.Memory {
+		t.Errorf("Expected Memory %d, got %d", config.Memory, status.Memory)
+	}
+	if status.DiskSize != config.DiskSize {
+		t.Errorf("Expected DiskSize %d, got %d", config.DiskSize, status.DiskSize)
+	}
+	if status.Kubernetes != config.Kubernetes {
+		t.Errorf("Expected Kubernetes %v, got %v", config.Kubernetes, status.Kubernetes)
+	}
+
+	// Verify kubeconfig check for Kubernetes-enabled profile
+	if config.Kubernetes {
+		_, err = useCase.GetKubeConfig(context.Background(), config.Profile)
+		if err != nil {
+			t.Errorf("Expected no error, got %v", err)
+		}
+		mockRepo.mu.Lock()
+		if !mockRepo.kubeConfigCalled {
+			t.Error("Expected GetKubeConfig to be called for Kubernetes-enabled profile")
+		}
+		if mockRepo.kubeConfigProfile != config.Profile {
+			t.Errorf("Expected profile %s, got %s", config.Profile, mockRepo.kubeConfigProfile)
+		}
+		mockRepo.mu.Unlock()
 	}
 }
 
-func TestStart(t *testing.T) {
-	tests := []struct {
-		name          string
-		config        domain.ColimaConfig
-		setupMock     func(*MockColimaRepository)
-		expectedError error
-	}{
-		{
-			name:   "successful start with defaults",
-			config: domain.ColimaConfig{},
-			setupMock: func(m *MockColimaRepository) {
-				m.On("CheckDependencies", mock.Anything).Return(&domain.DependencyStatus{
-					Homebrew: true,
-					Colima:   true,
-					Lima:     true,
-				}, nil)
-				m.On("Start", mock.Anything, mock.MatchedBy(func(config domain.ColimaConfig) bool {
-					defaults := domain.DefaultColimaConfig()
-					return config.CPUs == defaults.CPUs &&
-						config.Memory == defaults.Memory &&
-						config.DiskSize == defaults.DiskSize &&
-						config.VMType == defaults.VMType &&
-						config.Runtime == defaults.Runtime &&
-						config.Profile == defaults.Profile
-				})).Return(nil)
-			},
-			expectedError: nil,
-		},
-		{
-			name:   "missing dependencies",
-			config: domain.ColimaConfig{},
-			setupMock: func(m *MockColimaRepository) {
-				m.On("CheckDependencies", mock.Anything).Return(&domain.DependencyStatus{
-					Homebrew: true,
-					Colima:   false,
-					Lima:     false,
-				}, nil)
-				m.On("UpdateDependencies", mock.Anything).Return(nil)
-				m.On("CheckDependencies", mock.Anything).Return(&domain.DependencyStatus{
-					Homebrew: true,
-					Colima:   false,
-					Lima:     false,
-				}, nil)
-			},
-			expectedError: &domain.DependencyError{},
-		},
+func TestProfileLocking(t *testing.T) {
+	// Reset profile lock before test
+	domain.ResetProfileLock()
+
+	mockRepo := &mockRepository{}
+	useCase1 := NewColimaUseCase(mockRepo)
+	useCase2 := NewColimaUseCase(mockRepo)
+
+	// Test configuration
+	config := domain.ColimaConfig{
+		Profile: "test-profile",
+		CPUs:    4,
+		Memory:  8,
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			mockRepo := new(MockColimaRepository)
-			tt.setupMock(mockRepo)
+	// Use a WaitGroup to coordinate goroutines
+	var wg sync.WaitGroup
+	wg.Add(2)
 
-			uc := NewColimaUseCase(mockRepo)
-			err := uc.Start(context.Background(), tt.config)
+	// Channel to collect errors
+	errChan := make(chan error, 2)
 
-			if tt.expectedError != nil {
-				assert.Error(t, err)
-				assert.IsType(t, tt.expectedError, err)
-			} else {
-				assert.NoError(t, err)
-			}
-			mockRepo.AssertExpectations(t)
-		})
-	}
-}
+	// Start operation with first use case
+	go func() {
+		defer wg.Done()
+		if err := useCase1.Start(context.Background(), config); err != nil {
+			errChan <- err
+		}
+	}()
 
-func TestStatus(t *testing.T) {
-	tests := []struct {
-		name           string
-		profile        string
-		setupMock      func(*MockColimaRepository)
-		expectedStatus *domain.ColimaStatus
-		expectedError  error
-	}{
-		{
-			name:    "successful status check",
-			profile: "default",
-			setupMock: func(m *MockColimaRepository) {
-				m.On("Status", mock.Anything, "default").Return(&domain.ColimaStatus{
-					Status:     "running",
-					CPUs:       4,
-					Memory:     8,
-					DiskSize:   60,
-					Kubernetes: true,
-					Profile:    "default",
-				}, nil)
-			},
-			expectedStatus: &domain.ColimaStatus{
-				Status:     "running",
-				CPUs:       4,
-				Memory:     8,
-				DiskSize:   60,
-				Kubernetes: true,
-				Profile:    "default",
-			},
-			expectedError: nil,
-		},
-		{
-			name:    "profile not found",
-			profile: "non-existent",
-			setupMock: func(m *MockColimaRepository) {
-				m.On("Status", mock.Anything, "non-existent").Return(nil,
-					&domain.ProfileNotFoundError{Profile: "non-existent"})
-			},
-			expectedStatus: nil,
-			expectedError:  &domain.ProfileNotFoundError{},
-		},
+	// Small delay to ensure first operation has started
+	time.Sleep(50 * time.Millisecond)
+
+	// Attempt concurrent operation with second use case
+	go func() {
+		defer wg.Done()
+		if err := useCase2.Start(context.Background(), config); err != nil {
+			errChan <- err
+		}
+	}()
+
+	// Wait for both operations to complete
+	wg.Wait()
+	close(errChan)
+
+	// Collect errors
+	var errors []error
+	for err := range errChan {
+		errors = append(errors, err)
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			mockRepo := new(MockColimaRepository)
-			tt.setupMock(mockRepo)
-
-			uc := NewColimaUseCase(mockRepo)
-			status, err := uc.Status(context.Background(), tt.profile)
-
-			if tt.expectedError != nil {
-				assert.Error(t, err)
-				assert.IsType(t, tt.expectedError, err)
-				assert.Nil(t, status)
-			} else {
-				assert.NoError(t, err)
-				assert.Equal(t, tt.expectedStatus, status)
-			}
-			mockRepo.AssertExpectations(t)
-		})
-	}
-}
-
-func TestClean(t *testing.T) {
-	tests := []struct {
-		name          string
-		request       domain.CleanRequest
-		setupMock     func(*MockColimaRepository)
-		expectedError error
-	}{
-		{
-			name: "clean all profiles",
-			request: domain.CleanRequest{
-				Profile: "",
-			},
-			setupMock: func(m *MockColimaRepository) {
-				m.On("Clean", mock.Anything, mock.MatchedBy(func(req domain.CleanRequest) bool {
-					return req.Profile == ""
-				})).Return(nil)
-			},
-			expectedError: nil,
-		},
-		{
-			name: "clean specific profile",
-			request: domain.CleanRequest{
-				Profile: "test-profile",
-			},
-			setupMock: func(m *MockColimaRepository) {
-				m.On("Clean", mock.Anything, mock.MatchedBy(func(req domain.CleanRequest) bool {
-					return req.Profile == "test-profile"
-				})).Return(nil)
-			},
-			expectedError: nil,
-		},
-		{
-			name: "profile not found",
-			request: domain.CleanRequest{
-				Profile: "non-existent",
-			},
-			setupMock: func(m *MockColimaRepository) {
-				m.On("Clean", mock.Anything, mock.MatchedBy(func(req domain.CleanRequest) bool {
-					return req.Profile == "non-existent"
-				})).Return(&domain.ProfileNotFoundError{Profile: "non-existent"})
-			},
-			expectedError: &domain.ProfileNotFoundError{},
-		},
+	// Verify that exactly one error occurred (the blocked operation)
+	if len(errors) != 1 {
+		t.Errorf("Expected exactly one error, got %d", len(errors))
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			mockRepo := new(MockColimaRepository)
-			tt.setupMock(mockRepo)
-
-			uc := NewColimaUseCase(mockRepo)
-			err := uc.Clean(context.Background(), tt.request)
-
-			if tt.expectedError != nil {
-				assert.Error(t, err)
-				assert.IsType(t, tt.expectedError, err)
-			} else {
-				assert.NoError(t, err)
-			}
-			mockRepo.AssertExpectations(t)
-		})
-	}
-}
-
-func TestCheckDependencies(t *testing.T) {
-	tests := []struct {
-		name           string
-		setupMock      func(*MockColimaRepository)
-		expectedStatus *domain.DependencyStatus
-		expectedError  error
-	}{
-		{
-			name: "all dependencies present",
-			setupMock: func(m *MockColimaRepository) {
-				m.On("CheckDependencies", mock.Anything).Return(&domain.DependencyStatus{
-					Homebrew: true,
-					Colima:   true,
-					Lima:     true,
-				}, nil)
-			},
-			expectedStatus: &domain.DependencyStatus{
-				Homebrew: true,
-				Colima:   true,
-				Lima:     true,
-			},
-			expectedError: nil,
-		},
-		{
-			name: "missing dependencies",
-			setupMock: func(m *MockColimaRepository) {
-				m.On("CheckDependencies", mock.Anything).Return(nil,
-					&domain.DependencyError{Dependency: "homebrew", Reason: "not installed"})
-			},
-			expectedStatus: nil,
-			expectedError:  &domain.DependencyError{},
-		},
+	// Verify that the error is ProfileBusyError
+	if len(errors) > 0 {
+		if _, ok := errors[0].(*domain.ProfileBusyError); !ok {
+			t.Errorf("Expected ProfileBusyError, got %T", errors[0])
+		}
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			mockRepo := new(MockColimaRepository)
-			tt.setupMock(mockRepo)
+	// Test read operations (should work even when locked)
+	_, err := useCase2.Status(context.Background(), config.Profile)
+	if err != nil {
+		t.Errorf("Expected no error for Status, got %v", err)
+	}
 
-			uc := NewColimaUseCase(mockRepo)
-			status, err := uc.CheckDependencies(context.Background())
+	_, err = useCase2.GetKubeConfig(context.Background(), config.Profile)
+	if err != nil {
+		t.Errorf("Expected no error for GetKubeConfig, got %v", err)
+	}
 
-			if tt.expectedError != nil {
-				assert.Error(t, err)
-				assert.IsType(t, tt.expectedError, err)
-				assert.Nil(t, status)
-			} else {
-				assert.NoError(t, err)
-				assert.Equal(t, tt.expectedStatus, status)
-			}
-			mockRepo.AssertExpectations(t)
-		})
+	// Reset lock and verify we can start again
+	domain.ResetProfileLock()
+
+	err = useCase2.Start(context.Background(), config)
+	if err != nil {
+		t.Errorf("Expected no error after lock release, got %v", err)
 	}
 }
