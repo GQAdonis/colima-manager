@@ -11,6 +11,7 @@ A Go-based management tool for Colima that handles container runtime and Kuberne
 - Continuous health monitoring
 - Graceful shutdown handling
 - Multiple profile support with auto-start capability
+- System service integration for automatic startup
 
 ## Prerequisites
 
@@ -63,6 +64,45 @@ The manager will:
 2. Wait for the Docker socket to become available
 3. Configure Kubernetes if enabled
 4. Begin continuous health monitoring
+
+## System Service Installation
+
+### macOS
+
+To install Colima Manager as a system service that starts automatically on boot:
+
+```bash
+# Navigate to the services/macos directory
+cd services/macos
+
+# Run the installation script
+./install.sh
+```
+
+The installation script will:
+1. Create necessary log directories
+2. Install the service for the current user
+3. Configure the service to start on system boot
+4. Start the service immediately
+
+Logs will be available at `/var/log/colima-manager/`:
+- `output.log`: Standard output logs
+- `error.log`: Error logs
+
+To manage the service:
+```bash
+# Stop the service
+launchctl stop com.tribemedia.colima-manager
+
+# Start the service
+launchctl start com.tribemedia.colima-manager
+
+# Unload the service (prevent it from starting on boot)
+launchctl unload ~/Library/LaunchAgents/com.tribemedia.colima-manager.plist
+
+# Load the service (enable it to start on boot)
+launchctl load ~/Library/LaunchAgents/com.tribemedia.colima-manager.plist
+```
 
 ## Configuration
 
@@ -136,9 +176,13 @@ The project follows a comprehensive testing strategy:
 
 ## Logs
 
-Logs are stored in `~/colima-monitor/logs/`:
-- `colima-monitor.log`: General operation logs
-- `colima-monitor.err`: Error logs
+Logs are stored in:
+- Runtime logs: `~/colima-monitor/logs/`
+  - `colima-monitor.log`: General operation logs
+  - `colima-monitor.err`: Error logs
+- Service logs (when installed as system service): `/var/log/colima-manager/`
+  - `output.log`: Standard output logs
+  - `error.log`: Error logs
 
 ## License
 
