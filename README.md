@@ -10,6 +10,7 @@ A Go-based management tool for Colima that handles container runtime and Kuberne
 - Automatic kubeconfig merging
 - Continuous health monitoring
 - Graceful shutdown handling
+- Multiple profile support with auto-start capability
 
 ## Prerequisites
 
@@ -52,8 +53,13 @@ After installing, you can run the manager from anywhere:
 colima-manager
 ```
 
+To automatically start a profile on launch:
+```bash
+colima-manager -a
+```
+
 The manager will:
-1. Start Colima with predefined resources (12 CPUs, 32GB RAM, 100GB disk)
+1. Start Colima with the configured profile settings (or default if not specified)
 2. Wait for the Docker socket to become available
 3. Configure Kubernetes if enabled
 4. Begin continuous health monitoring
@@ -68,7 +74,43 @@ server:
   # The port number the HTTP server will listen on
   # Default: 8080 if not specified
   port: 8080
+  
+  # Auto-start configuration
+  auto:
+    # Whether to automatically start a profile on server startup
+    enabled: true
+    # The profile to start automatically (must exist in profiles section)
+    default: "default"
+
+# Colima profiles configuration
+profiles:
+  # Default profile with recommended settings
+  default:
+    cpus: 12
+    memory: 32
+    disk_size: 100
+    vm_type: "vz"
+    runtime: "containerd"
+    network_address: true
+    kubernetes: true
 ```
+
+### Configuration Options
+
+#### Server Section
+- `port`: The HTTP server port (default: 8080)
+- `auto.enabled`: Enable automatic profile startup
+- `auto.default`: The profile name to start automatically
+
+#### Profiles Section
+Each profile can have the following settings:
+- `cpus`: Number of CPUs to allocate
+- `memory`: Amount of memory in GB
+- `disk_size`: Disk size in GB
+- `vm_type`: VM type (e.g., "vz")
+- `runtime`: Container runtime (e.g., "containerd")
+- `network_address`: Enable network address
+- `kubernetes`: Enable Kubernetes support
 
 ## Testing Strategy
 
@@ -79,11 +121,13 @@ The project follows a comprehensive testing strategy:
    - Use cases in `internal/usecase`
    - HTTP handlers in `internal/interface/http/handler`
    - Infrastructure components in `internal/infrastructure`
+   - Configuration loading and validation in `internal/config`
 
 2. **Integration Tests**: Tests that verify the interaction between different components, particularly focusing on:
    - Colima operations
    - HTTP endpoint functionality
    - Configuration loading
+   - Profile management
 
 3. **Test Coverage**: The project maintains test coverage through:
    - Regular test execution via `mage test`

@@ -3,3 +3,22 @@ server:
   # The port number the HTTP server will listen on
   # Default: 8080 if not specified
   port: 8080
+  
+  # Auto-start configuration
+  auto:
+    # Whether to automatically start a profile on server startup
+    enabled: true
+    # The profile to start automatically (must exist in profiles section)
+    default: "default"
+
+# Colima profiles configuration
+profiles:
+  # Default profile with recommended settings
+  default:
+    cpus: 12
+    memory: 32
+    disk_size: 100
+    vm_type: "vz"
+    runtime: "containerd"
+    network_address: true
+    kubernetes: true

@@ -6,10 +6,27 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
+type ProfileConfig struct {
+	CPUs           int    `yaml:"cpus"`
+	Memory         int    `yaml:"memory"`
+	DiskSize       int    `yaml:"disk_size"`
+	VMType         string `yaml:"vm_type"`
+	Runtime        string `yaml:"runtime"`
+	NetworkAddress bool   `yaml:"network_address"`
+	Kubernetes     bool   `yaml:"kubernetes"`
+}
+
+type AutoConfig struct {
+	Enabled bool   `yaml:"enabled"`
+	Default string `yaml:"default"`
+}
+
 type Config struct {
 	Server struct {
-		Port int `yaml:"port"`
+		Port int        `yaml:"port"`
+		Auto AutoConfig `yaml:"auto"`
 	} `yaml:"server"`
+	Profiles map[string]ProfileConfig `yaml:"profiles"`
 }
 
 func LoadConfig() (*Config, error) {
